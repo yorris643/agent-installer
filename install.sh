@@ -1,9 +1,9 @@
 #!/bin/bash
 # ============================================================
-#  AI AGENT STARTER KIT v2.1
+#  AI AGENT STARTER KIT v2.2
 #  One-click installer: Hermes + 9Router + Multi LLM Provider
 #  Supported OS: Ubuntu 22.04 / 24.04
-#  Fixed: cli-secret wait loop, missing model, websockets
+#  Fixed: cli-secret robust init, missing model, websockets
 # ============================================================
 
 set -e
@@ -18,7 +18,6 @@ MAGENTA='\033[0;35m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# ─── HELPER ──────────────────────────────────────────────────
 log()     { echo -e "${GREEN}[✓]${NC} $1"; }
 info()    { echo -e "${BLUE}[i]${NC} $1"; }
 warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
@@ -41,7 +40,7 @@ fi
 OS_NAME=$(lsb_release -is 2>/dev/null || echo "unknown")
 OS_VERSION=$(lsb_release -rs 2>/dev/null || echo "unknown")
 if [[ "$OS_NAME" != "Ubuntu" ]]; then
-  warn "Script dioptimalkan untuk Ubuntu. OS kamu: $OS_NAME $OS_VERSION"
+  warn "Script dioptimalkan untuk Ubuntu. OS: $OS_NAME $OS_VERSION"
   read -p "Lanjutkan? (y/n): " CONTINUE_OS
   [[ "$CONTINUE_OS" != "y" ]] && exit 0
 fi
@@ -56,7 +55,7 @@ cat << 'EOF'
  / ___ \ | |   / ___ \ (_| |  __/ | | | |_ 
 /_/   \_\___| /_/   \_\__, |\___|_| |_|\__|
                        |___/                
-     Starter Kit v2.1 — One-Click Installer
+     Starter Kit v2.2 — One-Click Installer
 EOF
 echo -e "${NC}"
 echo -e "  ${BOLD}Stack:${NC} Hermes + 9Router + Multi LLM Provider"
@@ -103,7 +102,7 @@ case $LANG_CHOICE in
   2) AGENT_LANG="english" ;;
   *) AGENT_LANG="indonesia" ;;
 esac
-log "Bahasa agent: $AGENT_LANG"
+log "Bahasa: $AGENT_LANG"
 
 # ════════════════════════════════════════
 # BAGIAN 2: KONFIGURASI 9ROUTER
@@ -125,11 +124,11 @@ if [ "$ROUTER_CHOICE" = "1" ]; then
   log "Akan install 9Router baru"
 else
   INSTALL_9ROUTER=false
-  read -p "$(echo -e ${BOLD})Base URL 9Router (contoh: http://43.156.130.205:20128/v1): $(echo -e ${NC})" ROUTER_BASE_URL
+  read -p "Base URL 9Router (contoh: http://43.156.130.205:20128/v1): " ROUTER_BASE_URL
   [[ -z "$ROUTER_BASE_URL" ]] && error "Base URL tidak boleh kosong"
-  read -p "$(echo -e ${BOLD})API Key 9Router (sk-...): $(echo -e ${NC})" ROUTER_API_KEY
+  read -p "API Key 9Router (sk-...): " ROUTER_API_KEY
   [[ -z "$ROUTER_API_KEY" ]] && error "API Key tidak boleh kosong"
-  log "Akan pakai 9Router di: $ROUTER_BASE_URL"
+  log "Pakai 9Router di: $ROUTER_BASE_URL"
 fi
 
 # ════════════════════════════════════════
@@ -146,7 +145,6 @@ declare -a PROVIDER_URLS=()
 declare -a PROVIDER_PREFIXES=()
 declare -a COMBO_MODELS=()
 
-# NVIDIA NIM
 ask "Pakai NVIDIA NIM? (gratis, build.nvidia.com) [y/n]: "
 read USE_NVIDIA
 if [[ "$USE_NVIDIA" =~ ^[Yy]$ ]]; then
@@ -163,7 +161,6 @@ if [[ "$USE_NVIDIA" =~ ^[Yy]$ ]]; then
   fi
 fi
 
-# MIMO
 ask "Pakai MiMo Xiaomi? (gratis, platform.xiaomimimo.com) [y/n]: "
 read USE_MIMO
 if [[ "$USE_MIMO" =~ ^[Yy]$ ]]; then
@@ -178,7 +175,6 @@ if [[ "$USE_MIMO" =~ ^[Yy]$ ]]; then
   fi
 fi
 
-# GROQ
 ask "Pakai Groq? (gratis, console.groq.com) [y/n]: "
 read USE_GROQ
 if [[ "$USE_GROQ" =~ ^[Yy]$ ]]; then
@@ -194,7 +190,6 @@ if [[ "$USE_GROQ" =~ ^[Yy]$ ]]; then
   fi
 fi
 
-# PIONEER AI
 ask "Pakai Pioneer AI? (pioneer.ai) [y/n]: "
 read USE_PIONEER
 if [[ "$USE_PIONEER" =~ ^[Yy]$ ]]; then
@@ -209,7 +204,6 @@ if [[ "$USE_PIONEER" =~ ^[Yy]$ ]]; then
   fi
 fi
 
-# CUSTOM
 ask "Tambah custom LLM provider? [y/n]: "
 read USE_CUSTOM
 if [[ "$USE_CUSTOM" =~ ^[Yy]$ ]]; then
@@ -226,10 +220,6 @@ if [[ "$USE_CUSTOM" =~ ^[Yy]$ ]]; then
     COMBO_MODELS+=("$CUSTOM_PREFIX/$CUSTOM_MODEL")
     log "$CUSTOM_NAME ditambahkan"
   fi
-fi
-
-if [ ${#PROVIDERS[@]} -eq 0 ] && [ "$INSTALL_9ROUTER" = true ]; then
-  warn "Tidak ada LLM provider dipilih! 9Router akan kosong."
 fi
 
 # ════════════════════════════════════════
@@ -287,11 +277,12 @@ read -p "$(echo -e ${BOLD})Lanjutkan instalasi? (y/n): $(echo -e ${NC})" CONFIRM
 [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]] && echo "Dibatalkan." && exit 0
 
 # ════════════════════════════════════════
-# INSTALASI
+# FASE 1: UPDATE SISTEM
 # ════════════════════════════════════════
 section "FASE 1 — Update Sistem"
 apt update -qq && apt upgrade -y -qq
-apt install -y curl git build-essential ufw sqlite3 python3-pip python3-venv python3.12-venv -qq
+apt install -y curl git build-essential ufw sqlite3 \
+  python3-pip python3-venv python3.12-venv expect -qq
 log "Dependencies berhasil diinstall"
 
 section "FASE 2 — Setup Firewall"
@@ -299,7 +290,7 @@ ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw --force enable
-log "Firewall configured"
+log "Firewall configured (22, 80, 443)"
 
 section "FASE 3 — Install Node.js 22"
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash - > /dev/null 2>&1
@@ -314,33 +305,80 @@ if [ "$INSTALL_9ROUTER" = true ]; then
   npm install -g 9router -q
   log "9Router $(9router --version 2>/dev/null | head -1) berhasil diinstall"
 
-  # ── FIX: Jalankan 9Router background, tunggu cli-secret terbuat ──
-  info "Inisialisasi 9Router — tunggu file auth terbuat..."
-  9router --tray --no-browser &
-  ROUTER_BG_PID=$!
+  # ── ROBUST INIT: 3 metode fallback ──
+  info "Inisialisasi 9Router (tunggu auth files terbuat)..."
 
-  MAX_WAIT=90
-  WAITED=0
-  while [ ! -f /root/.9router/auth/cli-secret ] || [ ! -f /root/.9router/machine-id ]; do
-    sleep 3
-    WAITED=$((WAITED + 3))
-    echo -ne "${BLUE}[i]${NC} Menunggu 9Router init... ${WAITED}s/${MAX_WAIT}s\r"
-    if [ $WAITED -ge $MAX_WAIT ]; then
-      warn "9Router init timeout setelah ${MAX_WAIT}s"
-      break
-    fi
-  done
-  echo ""
+  # Metode 1: expect otomatis pilih menu
+  cat > /tmp/9router_init.exp << 'EXPEOF'
+#!/usr/bin/expect -f
+set timeout 60
+spawn 9router
+expect {
+  "Hide to Tray" {
+    send "\033\[B\033\[B\r"
+    sleep 10
+    exit 0
+  }
+  "Choose Interface" {
+    send "\033\[B\033\[B\r"
+    sleep 10
+    exit 0
+  }
+  timeout {
+    exit 1
+  }
+}
+EXPEOF
+  chmod +x /tmp/9router_init.exp
 
-  # Stop background process
-  kill $ROUTER_BG_PID 2>/dev/null || true
-  wait $ROUTER_BG_PID 2>/dev/null || true
-  sleep 2
+  expect /tmp/9router_init.exp > /dev/null 2>&1 || true
+  sleep 5
 
-  if [ -f /root/.9router/auth/cli-secret ]; then
-    log "9Router auth files terbuat"
+  # Metode 2: background process jika expect gagal
+  if [ ! -f /root/.9router/auth/cli-secret ]; then
+    info "Metode 2: background process..."
+    9router --tray --no-browser > /tmp/9router_bg.log 2>&1 &
+    ROUTER_BG_PID=$!
+    MAX_WAIT=120
+    WAITED=0
+    while [ ! -f /root/.9router/auth/cli-secret ]; do
+      sleep 3
+      WAITED=$((WAITED + 3))
+      echo -ne "${BLUE}[i]${NC} Menunggu cli-secret... ${WAITED}s/${MAX_WAIT}s\r"
+      if [ $WAITED -ge $MAX_WAIT ]; then
+        break
+      fi
+    done
+    echo ""
+    kill $ROUTER_BG_PID 2>/dev/null || true
+    wait $ROUTER_BG_PID 2>/dev/null || true
+    sleep 2
+  fi
+
+  # Metode 3: buat cli-secret manual jika 2 metode sebelumnya gagal
+  if [ ! -f /root/.9router/auth/cli-secret ]; then
+    info "Metode 3: buat cli-secret manual..."
+    mkdir -p /root/.9router/auth
+    node -e "
+const crypto = require('crypto');
+const fs = require('fs');
+fs.mkdirSync('/root/.9router/auth', {recursive: true});
+const secret = crypto.randomBytes(32).toString('hex');
+fs.writeFileSync('/root/.9router/auth/cli-secret', secret, {mode: 0o600});
+// Juga buat machine-id jika belum ada
+if (!fs.existsSync('/root/.9router/machine-id')) {
+  const mid = crypto.randomBytes(32).toString('hex');
+  fs.writeFileSync('/root/.9router/machine-id', mid, {mode: 0o600});
+}
+console.log('Auth files created');
+"
+  fi
+
+  # Verify
+  if [ -f /root/.9router/auth/cli-secret ] && [ -f /root/.9router/machine-id ]; then
+    log "9Router auth files siap"
   else
-    warn "cli-secret tidak ditemukan — setup provider mungkin gagal"
+    error "Gagal buat auth files — coba jalankan '9router' manual, pilih 'Hide to Tray', lalu jalankan installer lagi"
   fi
 
   # Setup systemd service
@@ -373,13 +411,12 @@ EOF
     WAITED=$((WAITED + 3))
     echo -ne "${BLUE}[i]${NC} Menunggu port 20128... ${WAITED}s\r"
     if [ $WAITED -ge $MAX_WAIT ]; then
-      warn "Port 20128 timeout — lanjut install"
+      warn "Port 20128 timeout"
       break
     fi
   done
   echo ""
-
-  ss -tlnp | grep -q 20128 && log "9Router jalan di port 20128" || warn "9Router belum listen di port 20128"
+  ss -tlnp | grep -q 20128 && log "9Router jalan di port 20128" || warn "Cek: systemctl status 9router"
 fi
 
 # ════════════════════════════════════════
@@ -390,7 +427,7 @@ if [ "$INSTALL_TUNNEL" = true ]; then
   curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 \
     -o /usr/local/bin/cloudflared -s
   chmod +x /usr/local/bin/cloudflared
-  log "Cloudflared $(cloudflared --version | head -1) berhasil diinstall"
+  log "Cloudflared berhasil diinstall"
 
   if [ "$USE_QUICK_TUNNEL" = true ]; then
     cat > /etc/systemd/system/9router-tunnel.service << 'EOF'
@@ -412,10 +449,10 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload
     systemctl enable --now 9router-tunnel
-    sleep 8
+    sleep 10
     QUICK_URL=$(grep -o 'https://.*trycloudflare.com' /tmp/9router-tunnel.log 2>/dev/null | head -1)
-    log "Quick tunnel aktif: ${QUICK_URL:-'cek /tmp/9router-tunnel.log'}"
-    warn "URL ini berubah setiap restart!"
+    log "Quick tunnel aktif: ${QUICK_URL:-'cek: tail /tmp/9router-tunnel.log'}"
+    warn "URL berubah setiap restart!"
 
   else
     echo ""
@@ -469,9 +506,9 @@ fi
 if [ "$INSTALL_9ROUTER" = true ] && [ ${#PROVIDERS[@]} -gt 0 ]; then
   section "FASE 6 — Setup LLM Providers di 9Router"
 
-  # ── FIX: Pastikan cli-secret ada sebelum generate token ──
+  # Verify cli-secret ada
   if [ ! -f /root/.9router/auth/cli-secret ]; then
-    error "File cli-secret tidak ditemukan! Jalankan: 9router --tray --no-browser & tunggu hingga /root/.9router/auth/cli-secret terbuat"
+    error "cli-secret tidak ditemukan setelah semua metode init"
   fi
 
   TOKEN=$(node -e "
@@ -481,11 +518,9 @@ const machineId = fs.readFileSync('/root/.9router/machine-id', 'utf8').trim();
 const secret = fs.readFileSync('/root/.9router/auth/cli-secret', 'utf8').trim();
 const token = crypto.createHash('sha256').update(machineId + '9r-cli-auth' + secret).digest('hex').substring(0, 16);
 console.log(token);
-  ")
+  " 2>/dev/null)
 
-  if [ -z "$TOKEN" ]; then
-    error "Gagal generate CLI token"
-  fi
+  [[ -z "$TOKEN" ]] && error "Gagal generate CLI token"
   log "CLI Token: $TOKEN"
 
   # Add setiap provider
@@ -496,18 +531,16 @@ console.log(token);
     PPREFIX="${PROVIDER_PREFIXES[$i]}"
 
     info "Menambahkan $PNAME..."
-
     NODE_RESP=$(curl -s -H "x-9r-cli-token: $TOKEN" -H "Content-Type: application/json" \
       -X POST http://localhost:20128/api/provider-nodes \
       -d "{\"type\":\"openai-compatible\",\"apiType\":\"chat\",\"name\":\"$PNAME\",\"prefix\":\"$PPREFIX\",\"baseUrl\":\"$PURL\"}")
-
     NODE_ID=$(echo "$NODE_RESP" | python3 -c "import sys,json;print(json.load(sys.stdin)['node']['id'])" 2>/dev/null || echo "")
 
     if [ -n "$NODE_ID" ]; then
       curl -s -H "x-9r-cli-token: $TOKEN" -H "Content-Type: application/json" \
         -X POST http://localhost:20128/api/providers \
         -d "{\"provider\":\"$NODE_ID\",\"apiKey\":\"$PKEY\",\"name\":\"$PNAME\"}" > /dev/null
-      log "$PNAME berhasil ditambahkan (ID: $NODE_ID)"
+      log "$PNAME berhasil (ID: ${NODE_ID:0:20}...)"
     else
       warn "Gagal tambah $PNAME — tambah manual di dashboard"
     fi
@@ -531,12 +564,12 @@ console.log(token);
     curl -s -H "x-9r-cli-token: $TOKEN" -H "Content-Type: application/json" \
       -X PUT "http://localhost:20128/api/combos/$COMBO_ID" \
       -d "{\"name\":\"free_smart_fallback\",\"models\":$MODELS_JSON}" > /dev/null
-    log "Combo free_smart_fallback berhasil (${#COMBO_MODELS[@]} model)"
+    log "Combo berhasil (${#COMBO_MODELS[@]} model)"
   else
     warn "Gagal buat combo — buat manual di dashboard"
   fi
 
-  # Buat API key untuk agent
+  # Buat API key
   info "Membuat API Key untuk $AGENT_NAME..."
   KEY_RESP=$(curl -s -H "x-9r-cli-token: $TOKEN" -H "Content-Type: application/json" \
     -X POST http://localhost:20128/api/keys \
@@ -544,9 +577,9 @@ console.log(token);
   AGENT_API_KEY=$(echo "$KEY_RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('key', d.get('apiKey', '')))" 2>/dev/null || echo "")
 
   if [ -n "$AGENT_API_KEY" ]; then
-    log "API Key berhasil: ${AGENT_API_KEY:0:25}..."
+    log "API Key: ${AGENT_API_KEY:0:25}..."
   else
-    warn "API key belum bisa dibuat otomatis — buat manual di dashboard (Endpoint → New Key)"
+    warn "API key belum bisa dibuat — buat manual di dashboard (Endpoint → New Key)"
     AGENT_API_KEY="BUAT_MANUAL_DI_DASHBOARD"
   fi
 
@@ -561,13 +594,11 @@ fi
 section "FASE 7 — Install Hermes"
 python3 -m venv /root/hermes-env
 source /root/hermes-env/bin/activate
-
-# ── FIX: Install websockets supaya tidak ada WARNING ──
 pip install hermes-agent websockets -q
 log "$(hermes --version 2>/dev/null | head -1) berhasil diinstall"
 
 # ════════════════════════════════════════
-# FASE 8: SETUP .ENV
+# FASE 8: SETUP CONFIG
 # ════════════════════════════════════════
 section "FASE 8 — Setup Konfigurasi"
 mkdir -p /root/.hermes
@@ -580,23 +611,21 @@ OPENAI_API_KEY=${AGENT_API_KEY}
 OPENAI_BASE_URL=${ROUTER_BASE_URL}
 EOF
 
-# Tambah API keys LLM
 for i in "${!PROVIDERS[@]}"; do
   PNAME_UPPER=$(echo "${PROVIDERS[$i]}" | tr '[:lower:]' '[:upper:]')
   echo "${PNAME_UPPER}_API_KEY=${PROVIDER_KEYS[$i]}" >> /root/.hermes/.env
 done
-
 chmod 600 /root/.hermes/.env
 log ".env berhasil dibuat"
 
-# ── FIX: Set model config dengan benar termasuk default ──
+# ── FIX: Set model.name DAN model.default ──
 hermes config set model.provider custom
 hermes config set model.name free_smart_fallback
 hermes config set model.default free_smart_fallback
 hermes config set model.base_url "${ROUTER_BASE_URL}"
 hermes config set model.api_key "${AGENT_API_KEY}"
 hermes config set model.api_mode chat_completions
-log "Model config terset"
+log "Model config terset (provider: custom, model: free_smart_fallback)"
 
 # ════════════════════════════════════════
 # FASE 9: SETUP SOUL.MD
@@ -659,9 +688,9 @@ Relasi: Partner — bukan sekadar asisten
 - Jangan klaim berhasil kalau belum diverifikasi
 
 # Escalation
-- Berhenti jika error berulang >3x dengan approach berbeda
+- Berhenti jika error berulang lebih dari 3x
 - Berhenti jika aksi berikutnya irreversible dan tidak yakin
-- Eskalasi dengan jelas: jelaskan apa yang terjadi dan apa yang dibutuhkan
+- Eskalasi dengan jelas: jelaskan apa yang terjadi
 
 # Default Disposition
 - Asumsi: user tahu apa yang mereka lakukan
@@ -724,26 +753,21 @@ log "Memory holographic berhasil disetup"
 # FASE 11: INSTALL GATEWAY
 # ════════════════════════════════════════
 section "FASE 11 — Install Gateway Service"
-hermes gateway install
-hermes gateway start
+hermes gateway install << 'GWEOF'
+y
+y
+GWEOF
 sleep 8
-
-GATEWAY_OK=$(hermes gateway status 2>/dev/null | grep -c "running" || echo "0")
-if [ "$GATEWAY_OK" -gt 0 ]; then
-  log "Hermes Gateway aktif"
-else
-  warn "Gateway mungkin butuh waktu — cek: hermes gateway status"
-fi
+hermes gateway status 2>/dev/null | grep -q "running" && log "Hermes Gateway aktif" || warn "Cek: hermes gateway status"
 
 # ════════════════════════════════════════
 # SELESAI
 # ════════════════════════════════════════
 section "INSTALASI SELESAI!"
 
-# Simpan info
 cat > /root/.hermes/install-info.txt << EOF
-AI Agent Starter Kit v2.1 — Install Info
-==========================================
+AI Agent Starter Kit v2.2
+==========================
 Agent Name    : $AGENT_NAME
 Install Date  : $(date)
 Hermes        : $(hermes --version 2>/dev/null | head -1)
@@ -762,6 +786,7 @@ echo -e "  Memory         : ${GREEN}Holographic (local)${NC}"
 echo -e "  Gateway        : ${GREEN}Active${NC}"
 [ -n "$FULL_DOMAIN" ] && echo -e "  Dashboard      : ${GREEN}https://$FULL_DOMAIN${NC}"
 [ "$INSTALL_9ROUTER" = true ] && [ -z "$FULL_DOMAIN" ] && echo -e "  Dashboard      : ${GREEN}http://$(curl -s ifconfig.me 2>/dev/null):20128${NC}"
+[ "$USE_QUICK_TUNNEL" = true ] && echo -e "  Tunnel URL     : ${GREEN}$(grep -o 'https://.*trycloudflare.com' /tmp/9router-tunnel.log 2>/dev/null | head -1)${NC}"
 
 if [ "$AGENT_API_KEY" = "BUAT_MANUAL_DI_DASHBOARD" ]; then
   echo ""
@@ -769,18 +794,20 @@ if [ "$AGENT_API_KEY" = "BUAT_MANUAL_DI_DASHBOARD" ]; then
   echo -e "  1. Buka dashboard 9Router"
   echo -e "  2. Endpoint → New Key → nama '$AGENT_NAME' → copy key"
   echo -e "  3. nano /root/.hermes/.env → isi OPENAI_API_KEY"
-  echo -e "  4. hermes config set model.api_key <key>"
-  echo -e "  5. hermes config set model.default free_smart_fallback"
-  echo -e "  6. source /root/hermes-env/bin/activate && hermes gateway restart"
+  echo -e "  4. source /root/hermes-env/bin/activate"
+  echo -e "  5. hermes config set model.api_key <key>"
+  echo -e "  6. hermes config set model.default free_smart_fallback"
+  echo -e "  7. hermes gateway restart"
 fi
 
 echo ""
 echo -e "${BOLD}Command berguna:${NC}"
-echo -e "  ${CYAN}source /root/hermes-env/bin/activate${NC}  # aktifkan Hermes"
-echo -e "  ${CYAN}hermes gateway status${NC}                 # cek status bot"
-echo -e "  ${CYAN}hermes gateway restart${NC}                # restart bot"
-echo -e "  ${CYAN}systemctl status 9router${NC}              # cek 9Router"
+echo -e "  ${CYAN}source /root/hermes-env/bin/activate${NC}   # aktifkan Hermes"
+echo -e "  ${CYAN}hermes gateway status${NC}                  # cek status bot"
+echo -e "  ${CYAN}hermes gateway restart${NC}                 # restart bot"
+echo -e "  ${CYAN}systemctl status 9router${NC}               # cek 9Router"
 echo -e "  ${CYAN}journalctl --user -u hermes-gateway -f${NC} # log bot"
-echo -e "  ${CYAN}cat /root/.hermes/install-info.txt${NC}    # info instalasi"
+echo -e "  ${CYAN}cat /root/.hermes/install-info.txt${NC}     # info instalasi"
+[ "$USE_QUICK_TUNNEL" = true ] && echo -e "  ${CYAN}tail /tmp/9router-tunnel.log | grep trycloudflare${NC} # cek URL tunnel"
 echo ""
 echo -e "${BOLD}${CYAN}Selamat menggunakan $AGENT_NAME! 🚀${NC}"
